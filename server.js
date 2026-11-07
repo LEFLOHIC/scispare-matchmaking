@@ -40,6 +40,8 @@ const invites = new Map();    // "deId>aId" -> { from, to, at }
 const rooms = new Map();      // code salle -> { host: socket|null, guest: socket|null, at }
 
 const ID_RE = /^[a-f0-9]{16,64}$/;
+const WAITING_TIMEOUT_MS = 90 * 1000;     // libère un joueur resté seul trop longtemps (repris de la v1 en ligne)
+const HEARTBEAT_INTERVAL_MS = 30 * 1000;  // fréquence de vérification des connexions mortes
 const MAX_FRIENDS = 10;
 
 function safeSend(ws, obj) {
@@ -51,9 +53,19 @@ function cleanName(s) { return String(s || '').replace(/[\u0000-\u001f<>]/g, '')
 function cleanAvatar(s) { return String(s || '').slice(0, 8); }
 
 /* ---------- Mise en relation au hasard (identique à la v1) ---------- */
+// Si le joueur en attente l'est depuis trop longtemps (personne ne s'est connecté),
+// on le libère plutôt que de le matcher avec un adversaire qui a peut-être quitté.
+function clearWaitingIfStale() {
+  if (waitingPlayer && Date.now() - waitingPlayer.waitingSince > WAITING_TIMEOUT_MS) {
+    safeSend(waitingPlayer, { type: 'no_opponent' });
+    waitingPlayer = null;
+  }
+}
 function enqueue(ws) {
+  clearWaitingIfStale();
   if (waitingPlayer === null || waitingPlayer.readyState !== WebSocket.OPEN || waitingPlayer === ws) {
     waitingPlayer = ws;
+    waitingPlayer.waitingSince = Date.now();
     safeSend(ws, { type: 'waiting' });
   } else {
     const host = waitingPlayer;
@@ -206,16 +218,19 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// Garder les connexions en vie, et faire le ménage (défis et salles de plus de 2 minutes)
+// Ferme les connexions mortes (perte réseau, appli tuée, veille du téléphone…), libère un joueur
+// resté seul trop longtemps, et fait le ménage (défis et salles de plus de 2 minutes).
+// Comme la v1, ce serveur doit tourner en UNE SEULE instance (tout est en mémoire).
 setInterval(() => {
   wss.clients.forEach((ws) => {
     if (ws.isAlive === false) return ws.terminate();
     ws.isAlive = false;
     ws.ping();
   });
+  clearWaitingIfStale();
   const old = Date.now() - 120000;
   invites.forEach((inv, key) => { if (inv.at < old) invites.delete(key); });
   rooms.forEach((r, key) => { if (r.at < old) rooms.delete(key); });
-}, 30000);
+}, HEARTBEAT_INTERVAL_MS);
 
 server.listen(PORT, () => console.log('Serveur de mise en relation Scispare Mind (v2, amis) démarré sur le port ' + PORT));
