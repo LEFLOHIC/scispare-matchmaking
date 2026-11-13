@@ -42,7 +42,7 @@ const rooms = new Map();      // code salle -> { host: socket|null, guest: socke
 const ID_RE = /^[a-f0-9]{16,64}$/;
 const WAITING_TIMEOUT_MS = 90 * 1000;     // libère un joueur resté seul trop longtemps (repris de la v1 en ligne)
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;  // fréquence de vérification des connexions mortes
-const MAX_FRIENDS = 10;
+const MAX_FRIENDS = 15;
 
 function safeSend(ws, obj) {
   if (ws && ws.readyState === WebSocket.OPEN) {
